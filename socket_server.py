@@ -1,55 +1,116 @@
-from flask import Flask, request, jsonify
-from flask_socketio import SocketIO
+import socket
+import sys
+import threading
+import signal
 from PIL import Image
 from io import BytesIO
 import base64
-import time
-import numpy as np
-import os
+import random
+import json
+from action_helper import decode_action, encode_action
 
-from action_helper import decode_action
+import numpy as np
+from config import PARALLEL_SIZE
 from a3c import A3C
 
-# python xxx.py
-# 127.0,0.1:5000
-app = Flask(__name__, static_url_path='', static_folder='static-ddpg')
-app.config['SECRET_KEY'] = 'secret!'
-app.debug = False  # you need to cancel debug mode when you run it on gpu
-socketio = SocketIO(app)
 
+# Create a TCP/IP socket
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+# Bind the socket to the address given on the command line
+server_address = ('', 9999)
+sock.bind(server_address)
+sock.listen(1)
+
+client_threads = []
+stop_requested = False
 net = A3C()
-# four threads
-state_list = [[], [], [], []]
 
 
-def getTime():
-    return int(round(time.time() * 1000))
+def signal_handler(signal_, frame_):
+    print 'You pressed Ctrl+C !'
+    global stop_requested
+    stop_requested = True
+    return
 
 
-@app.route('/train', methods=['post'])
-def train():
-    data = request.form
-    thread_id = int(data['thread_id'])
-    image = Image.open(BytesIO(base64.b64decode(data['img']))).convert('L')
-    global state_list
-    if len(state_list[thread_id]) == 0:
-        state_list[thread_id] = np.stack((image, image, image, image), axis=2)
-    else:
-        image = np.reshape(image, (84, 84, 1))
-        state_list[thread_id] = np.append(state_list[thread_id][:, :, 1:], image, axis=2)
-    reward = float(data['reward'])
-    terminal = data['terminal'] == 'true'
+def handler(index, connection, client_address):
+    try:
+        print 'client connected:', client_address
+        state = []
+        while not stop_requested:
+            data = recv_msg(connection)
+            if data:
+                print 'received:', len(data)
+                data = json.loads(data)
+                # imgname = 'car_%d.png' % random.randint(0, 10000)
+                # image.save(imgname)
+                # print 'received "%s"' % data
+                image = Image.open(BytesIO(base64.b64decode(data['img']))).convert('L')
+                if len(state) == 0:
+                    state = np.stack((image, image, image, image), axis=2)
+                else:
+                    image = np.reshape(image, (84, 84, 1))
+                    state = np.append(state[:, :, 1:], image, axis=2)
+                reward = data['reward']
+                terminal = data['terminal']
 
-    # print reward, terminal, np.shape(state_list[thread_id])
-    # action_id = 2
-    action_id = net.train_function(thread_id, state_list[thread_id], reward, terminal)
-    return jsonify(decode_action(action_id))
+                action_id = net.train_function(index, state, reward, terminal)
+                action = json.dumps(decode_action(action_id)).zfill(100)
+                connection.sendall(action)
+            else:
+                break
+
+        # save model
+        net.backup()
+    finally:
+        connection.close()
+    return
 
 
-@app.route('/')
-def index_final():
-    return app.send_static_file('v4.final.html')
+def main():
+    index = 0
+    while True:
+        print 'waiting for a connection'
+        connection, client_address = sock.accept()
+        client = threading.Thread(target=handler, args=(index, connection, client_address))
+        client_threads.append(client)
+        if len(client_threads) == PARALLEL_SIZE:
+            break
+
+    signal.signal(signal.SIGINT, signal_handler)
+
+    for thread in client_threads:
+        thread.start()
+
+    print 'Press Ctrl+C to stop'
+    signal.pause()
+
+    print 'Now saving data....'
+    for t in client_threads:
+        t.join()
+    return
+
+
+def recv_msg(sock):
+    # Read message length and unpack it into an integer
+    raw_msglen = recvall(sock, 20)
+    if not raw_msglen:
+        return None
+    msglen = int(raw_msglen)
+    return recvall(sock, msglen)
+
+
+def recvall(sock, n):
+    # Helper function to recv n bytes or return None if EOF is hit
+    data = ''
+    while len(data) < n:
+        packet = sock.recv(n - len(data))
+        if not packet:
+            return None
+        data += packet
+    return data
 
 
 if __name__ == '__main__':
-    socketio.run(app)
+    main()

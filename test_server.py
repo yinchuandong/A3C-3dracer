@@ -39,10 +39,10 @@ def handler(connection, client_address):
                 print 'received:', len(data)
                 data = json.loads(data)
                 image = Image.open(BytesIO(base64.b64decode(data['img']))).convert('RGB')
-                imgname = 'car_%d.png' % random.randint(0, 10000)
-                image.save(imgname)
+                # imgname = 'car_%d.png' % random.randint(0, 10000)
+                # image.save(imgname)
                 # print 'received "%s"' % data
-                action = json.dumps(decode_action(2)).zfill(100)
+                action = json.dumps(decode_action(1)).zfill(100)
                 connection.sendall(action)
             else:
                 break
@@ -57,7 +57,7 @@ def main():
         connection, client_address = sock.accept()
         client = threading.Thread(target=handler, args=(connection, client_address))
         client_threads.append(client)
-        if len(client_threads) == 1:
+        if len(client_threads) == 2:
             break
 
     signal.signal(signal.SIGINT, signal_handler)
