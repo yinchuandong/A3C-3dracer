@@ -41,7 +41,7 @@ def handler(index, connection, client_address):
         while not stop_requested:
             data = recv_msg(connection)
             if data:
-                print 'received:', len(data)
+                # print 'received:', len(data)
                 data = json.loads(data)
                 # imgname = 'car_%d.png' % random.randint(0, 10000)
                 # image.save(imgname)
@@ -75,6 +75,7 @@ def main():
         connection, client_address = sock.accept()
         client = threading.Thread(target=handler, args=(index, connection, client_address))
         client_threads.append(client)
+        index += 1
         if len(client_threads) == PARALLEL_SIZE:
             break
 

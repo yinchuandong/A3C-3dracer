@@ -133,8 +133,8 @@ class A3CActorThread(object):
             self.episode_start_time = episode_end_time
             if USE_LSTM:
                 self.local_network.reset_lstm_state()
-        elif self.local_t % 2000 == 0:
-            # save log per 2000 episodes
+        elif self.local_t % 1000 == 0:
+            # save log per 1000 episodes
             living_time = timestamp() - self.episode_start_time
             self._record_log(sess, global_t, self.episode_reward, living_time)
         # -----------end of batch (LOCAL_T_MAX)--------------------
