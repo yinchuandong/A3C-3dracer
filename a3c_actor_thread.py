@@ -56,6 +56,7 @@ class A3CActorThread(object):
         self.actions = []
         self.rewards = []
         self.values = []
+        self.start_lstm_state = None
         return
 
     def set_log_parmas(self, summary_writer, summary_op, reward_input, time_input):
@@ -103,6 +104,8 @@ class A3CActorThread(object):
             # copy weight from global network
             sess.run(self.reset_gradients)
             sess.run(self.sync)
+            if USE_LSTM:
+                self.start_lstm_state = self.local_network.lstm_state_out
 
         policy_, value_ = self.local_network.run_policy_and_value(sess, state)
         if self.thread_index == 0 and self.local_t % 1000 == 0:
@@ -133,8 +136,8 @@ class A3CActorThread(object):
             self.episode_start_time = episode_end_time
             if USE_LSTM:
                 self.local_network.reset_lstm_state()
-        elif self.local_t % 1000 == 0:
-            # save log per 1000 episodes
+        elif self.local_t % 2000 == 0:
+            # save log per 2000 episodes
             living_time = timestamp() - self.episode_start_time
             self._record_log(sess, global_t, self.episode_reward, living_time)
         # -----------end of batch (LOCAL_T_MAX)--------------------
@@ -167,7 +170,6 @@ class A3CActorThread(object):
                 batch_R.append(R)
 
             if USE_LSTM:
-                start_lstm_state = self.local_network.lstm_state_out
                 batch_state.reverse()
                 batch_action.reverse()
                 batch_td.reverse()
@@ -178,8 +180,9 @@ class A3CActorThread(object):
                     self.local_network.td: batch_td,
                     self.local_network.R: batch_R,
                     self.local_network.step_size: [len(batch_state)],
-                    self.local_network.initial_lstm_state: start_lstm_state
+                    self.local_network.initial_lstm_state: self.start_lstm_state
                 })
+                self.start_lstm_state = self.local_network.lstm_state_out
             else:
                 sess.run(self.accum_gradients, feed_dict={
                     self.local_network.state_input: batch_state,
