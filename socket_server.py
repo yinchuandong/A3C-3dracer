@@ -7,6 +7,7 @@ from io import BytesIO
 import base64
 import random
 import json
+import cPickle
 from action_helper import decode_action, encode_action
 
 import numpy as np
@@ -42,22 +43,26 @@ def handler(index, connection, client_address):
             data = recv_msg(connection)
             if data:
                 # print 'received:', len(data)
-                data = json.loads(data)
+                data = cPickle.loads(data)
                 # imgname = 'car_%d.png' % random.randint(0, 10000)
                 # image.save(imgname)
                 # print 'received "%s"' % data
-                image = Image.open(BytesIO(base64.b64decode(data['img']))).convert('L')
-                if len(state) == 0:
-                    state = np.stack((image, image, image, image), axis=2)
-                else:
-                    image = np.reshape(image, (84, 84, 1))
-                    state = np.append(state[:, :, 1:], image, axis=2)
+                # for car
+                # image = Image.open(BytesIO(base64.b64decode(data['img']))).convert('L')
+                # if len(state) == 0:
+                #     state = np.stack((image, image, image, image), axis=2)
+                # else:
+                #     image = np.reshape(image, (84, 84, 1))
+                #     state = np.append(state[:, :, 1:], image, axis=2)
+                
+                state = data['state']
                 reward = data['reward']
                 terminal = data['terminal']
 
                 action_id = net.train_function(index, state, reward, terminal)
-                action = json.dumps(decode_action(action_id)).zfill(100)
-                connection.sendall(action)
+                # action = json.dumps(decode_action(action_id)).zfill(100)
+                # connection.sendall(action)
+                connection.sendall(str(action_id))
             else:
                 break
 
